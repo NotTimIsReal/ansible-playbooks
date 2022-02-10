@@ -1,0 +1,40 @@
+- name: Update PKG
+  apt: 
+    update_cache: yes
+    upgrade: yes
+  
+- name: Install Important
+  package:
+    name: "{{ packages }}"
+    state: latest
+
+- name: Setup Docker
+  command: sudo usermod -aG docker "{{ username }}"
+
+- name: Check For Portainer
+  command: docker ps -aq --filter "name=portainer"
+  register: portainer
+
+- name: Install Portainer
+  command: docker run -d -p 9443:9443 --name portainer --restart=always  -v /var/run/docker.sock:/var/run/docker.sock -v portainer_data:/data portainer/portainer-ce:latest
+  when: portainer["stdout"] is defined and (portainer["stdout"]| length == 0)
+
+- name: Disbale Password Auth
+  lineinfile:
+    dest: /etc/ssh/sshd_config
+    regexp: "^#PasswordAuthentication yes"
+    line: "PasswordAuthentication no"
+  register: sshd_config
+
+- name: PasswordLess Sudo for "{{ username }}"
+  lineinfile:
+    dest: /etc/sudoers
+    regexp: "^%wheel"
+    line: "{{ username }} ALL=(ALL) NOPASSWD: ALL"
+    validate: "/usr/sbin/visudo -cf %s"
+
+- name: Restart SSH
+  service:
+    name: ssh
+    state: restarted
+  when: sshd_config.changed
